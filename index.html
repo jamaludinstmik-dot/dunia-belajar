@@ -302,9 +302,11 @@
     <script>
     // Diagnostik: tampilkan penyebab bila halaman macet di "Memuat..."
     (function () {
+        var failed = false;
         function bootFail(msg) {
             var b = document.getElementById('boot');
-            if (!b || b.classList.contains('hidden')) return;
+            if (failed || !b || b.classList.contains('hidden')) return;
+            failed = true;
             b.textContent = '';
             var d = document.createElement('div'); d.className = 'max-w-xl p-6 text-center';
             var t = document.createElement('p'); t.className = 'font-bold text-red-700 mb-2'; t.textContent = 'Aplikasi gagal dimuat';
@@ -532,8 +534,8 @@
         const cards = await Promise.all(rows.map(r => fileCard(r, table, () => loadFileList(table, boxId, emptyMsg))));
         cards.forEach(c => box.append(c));
     }
-    const loadLKPD = () => loadFileList('lkpd', 'list-lkpd', 'Belum ada LKPD.');
-    const loadLatihan = () => loadFileList('latihan', 'list-latihan', 'Belum ada latihan soal.');
+    function loadLKPD() { return loadFileList('lkpd', 'list-lkpd', 'Belum ada LKPD.'); }
+    function loadLatihan() { return loadFileList('latihan', 'list-latihan', 'Belum ada latihan soal.'); }
 
     async function simpanFileItem(table, form, judulId, fileId, exts, reload) {
         const judul = $(judulId).value.trim();
