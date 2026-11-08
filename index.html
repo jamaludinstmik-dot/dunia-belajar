@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dunia Belajar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } } }
+    </script>
+    <style>
+        html { scroll-behavior: smooth; }
+        .section-container { display: none; }
+        .section-container.active { display: block; animation: fadeIn 0.25s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        /* Kemudahan tampilan saja. Keamanan sebenarnya ditegakkan oleh RLS di database. */
+        body:not([data-role="guru"]) .guru-only { display: none !important; }
+        body[data-role="guru"] .siswa-only { display: none !important; }
+        .field { width: 100%; border: 1px solid #d1d5db; border-radius: 0.375rem; padding: 0.75rem; color: #111827; background: #fff; }
+        .field:focus { outline: none; box-shadow: 0 0 0 2px #10b981; }
+        .btn { background: #065f46; color: #fff; font-weight: 700; padding: 0.5rem 1.5rem; border-radius: 0.5rem; transition: background .15s; }
+        .btn:hover { background: #064e3b; }
+        .btn:disabled { opacity: .6; cursor: not-allowed; }
+        .lbl { display: block; font-size: 0.875rem; font-weight: 700; color: #111827; margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans antialiased">
+
+    <!-- Layar muat -->
+    <div id="boot" class="min-h-screen flex items-center justify-center text-emerald-900 font-semibold">
+        <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat...
+    </div>
+
+    <!-- Layar konfigurasi belum diisi -->
+    <div id="setup-screen" class="hidden min-h-screen flex items-center justify-center p-6">
+        <div class="bg-white max-w-xl rounded-xl shadow-md p-8 border border-amber-200">
+            <h1 class="text-xl font-bold text-gray-900 mb-2"><i class="fa-solid fa-triangle-exclamation text-amber-500 mr-2"></i>Supabase belum dikonfigurasi</h1>
+            <p class="text-gray-700 text-sm mb-3">Buka <code>index.html</code>, cari bagian <code>KONFIGURASI</code>, lalu isi <code>SUPABASE_URL</code> dan <code>SUPABASE_ANON_KEY</code>. Panduan lengkap ada di <code>README.md</code>.</p>
+        </div>
+    </div>
+
+    <!-- Layar login / daftar -->
+    <div id="auth-screen" class="hidden min-h-screen flex items-center justify-center p-6 bg-emerald-900">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl p-8">
+            <div class="text-center mb-6">
+                <i class="fa-solid fa-book-open-reader text-4xl text-emerald-700"></i>
+                <h1 class="text-2xl font-bold text-gray-900 mt-2">DUNIA<span class="text-emerald-600">BELAJAR</span></h1>
+            </div>
+            <div class="flex mb-6 border-b border-gray-200">
+                <button type="button" id="tab-login" class="flex-1 py-2 font-bold border-b-4 border-emerald-600 text-emerald-800">Masuk</button>
+                <button type="button" id="tab-register" class="flex-1 py-2 font-bold border-b-4 border-transparent text-gray-500">Daftar</button>
+            </div>
+
+            <form id="form-login" class="space-y-4">
+                <div><label class="lbl" for="login-email">Email</label><input class="field" type="email" id="login-email" required autocomplete="email"></div>
+                <div><label class="lbl" for="login-pass">Kata Sandi</label><input class="field" type="password" id="login-pass" required autocomplete="current-password"></div>
+                <button type="submit" class="btn w-full py-3">Masuk</button>
+            </form>
+
+            <form id="form-register" class="hidden space-y-4">
+                <div><label class="lbl" for="reg-nama">Nama Lengkap</label><input class="field" type="text" id="reg-nama" required maxlength="80" autocomplete="name"></div>
+                <div><label class="lbl" for="reg-email">Email</label><input class="field" type="email" id="reg-email" required autocomplete="email"></div>
+                <div><label class="lbl" for="reg-pass">Kata Sandi (min. 6 karakter)</label><input class="field" type="password" id="reg-pass" required minlength="6" autocomplete="new-password"></div>
+                <button type="submit" class="btn w-full py-3">Buat Akun Siswa</button>
+                <p class="text-xs text-gray-600">Akun guru diaktifkan oleh administrator.</p>
+            </form>
+            <p id="auth-msg" class="hidden mt-4 text-sm font-medium rounded-md p-3"></p>
+        </div>
+    </div>
+
+    <!-- Aplikasi -->
+    <div id="app" class="hidden">
+        <nav class="bg-emerald-900 text-white shadow-lg sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex items-center">
+                        <a href="#beranda" class="flex items-center gap-2 text-xl font-bold tracking-wider">
+                            <i class="fa-solid fa-book-open-reader text-emerald-400"></i>
+                            <span>DUNIA<span class="text-emerald-400">BELAJAR</span></span>
+                        </a>
+                    </div>
+                    <div class="hidden md:flex items-center space-x-1 lg:space-x-2">
+                        <div id="nav-desktop" class="flex items-center space-x-1 lg:space-x-2"></div>
+                        <div class="flex items-center gap-2 pl-3 ml-2 border-l border-emerald-700">
+                            <span class="text-sm"><span id="nav-nama" class="font-semibold"></span> <span id="nav-role" class="text-xs bg-emerald-700 px-2 py-0.5 rounded-full uppercase"></span></span>
+                            <button type="button" class="logout-btn px-3 py-1.5 rounded-md text-sm bg-emerald-800 hover:bg-emerald-700" title="Keluar"><i class="fa-solid fa-right-from-bracket"></i></button>
+                        </div>
+                    </div>
+                    <div class="flex items-center md:hidden">
+                        <button type="button" id="mobile-menu-btn" aria-label="Buka menu" aria-expanded="false" class="text-white hover:text-emerald-300 p-2"><i class="fa-solid fa-bars text-2xl"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div id="mobile-menu" class="hidden md:hidden bg-emerald-800 border-t border-emerald-700">
+                <div id="nav-mobile" class="px-2 pt-2 pb-3 space-y-1"></div>
+                <div class="px-4 py-3 border-t border-emerald-700 flex justify-between items-center text-sm">
+                    <span><span class="nama-user font-semibold"></span> <span class="role-user text-xs bg-emerald-700 px-2 py-0.5 rounded-full uppercase"></span></span>
+                    <button type="button" class="logout-btn bg-emerald-700 px-3 py-1.5 rounded-md">Keluar</button>
+                </div>
+            </div>
+        </nav>
+
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+
+            <!-- Beranda -->
+            <section id="sec-beranda" class="section-container">
+                <div class="bg-emerald-900 text-white rounded-3xl overflow-hidden relative p-12 lg:p-20 shadow-xl">
+                    <div class="absolute inset-0 opacity-10">
+                        <svg class="h-full w-full" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon fill="currentColor" points="0,100 100,0 100,100"/></svg>
+                    </div>
+                    <div class="relative z-10 md:w-2/3">
+                        <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight mb-4 leading-tight">Selamat Datang, <span id="hero-nama"></span></h1>
+                        <p class="text-lg md:text-xl text-emerald-100 mb-8 max-w-2xl">
+                            <span class="siswa-only">Akses materi dari guru, kerjakan LKPD, kumpulkan tugas, dan nikmati game pembelajaran interaktif.</span>
+                            <span class="guru-only">Kelola materi, LKPD, tugas, nilai, dan absensi kelas Anda dari satu tempat.</span>
+                        </p>
+                        <a href="#materi/kelas-10" class="bg-white text-emerald-900 font-bold px-8 py-3 rounded-full hover:bg-gray-100 transition shadow-lg inline-block">Lihat Materi Terbaru</a>
+                    </div>
+                </div>
+            </section>
+
+            <!-- LKPD -->
+            <section id="sec-lkpd" class="section-container">
+                <div class="flex justify-between items-center mb-8 border-b-4 border-emerald-600 pb-2">
+                    <h2 class="text-3xl font-bold text-gray-800">Lembar Kerja (LKPD)</h2>
+                    <button type="button" data-toggle="form-lkpd" class="guru-only btn flex items-center gap-2"><i class="fa-solid fa-plus"></i> Tambah LKPD</button>
+                </div>
+                <form id="form-lkpd" class="guru-only hidden bg-white p-6 rounded-xl shadow-md border border-emerald-100 mb-8">
+                    <h3 class="font-bold text-lg text-gray-900 mb-4 border-b pb-2">Panel Guru: Upload File LKPD</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                        <div><label class="lbl" for="lkpd-judul">Judul LKPD</label><input class="field" type="text" id="lkpd-judul" required maxlength="150" placeholder="Contoh: LKPD Ekosistem"></div>
+                        <div><label class="lbl" for="lkpd-file">File PDF/Word (maks. 10 MB)</label><input class="field" type="file" id="lkpd-file" required accept=".pdf,.doc,.docx"></div>
+                    </div>
+                    <button type="submit" class="btn">Simpan &amp; Terbitkan LKPD</button>
+                </form>
+                <div id="list-lkpd" class="space-y-4"></div>
+            </section>
+
+            <!-- Latihan -->
+            <section id="sec-latihan" class="section-container">
+                <div class="flex justify-between items-center mb-8 border-b-4 border-emerald-600 pb-2">
+                    <h2 class="text-3xl font-bold text-gray-800">Latihan Soal</h2>
+                    <button type="button" data-toggle="form-latihan" class="guru-only btn flex items-center gap-2"><i class="fa-solid fa-plus"></i> Tambah Latihan</button>
+                </div>
+                <form id="form-latihan" class="guru-only hidden bg-white p-6 rounded-xl shadow-md border border-emerald-100 mb-8">
+                    <h3 class="font-bold text-lg text-gray-900 mb-4 border-b pb-2">Panel Guru: Tambah Latihan Soal (PDF)</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                        <div><label class="lbl" for="latihan-judul">Judul Latihan</label><input class="field" type="text" id="latihan-judul" required maxlength="150" placeholder="Contoh: Latihan 1 Sejarah"></div>
+                        <div><label class="lbl" for="latihan-file">File PDF (maks. 10 MB)</label><input class="field" type="file" id="latihan-file" required accept=".pdf"></div>
+                    </div>
+                    <button type="submit" class="btn">Simpan Latihan</button>
+                </form>
+                <div id="list-latihan" class="space-y-4"></div>
+            </section>
+
+            <!-- Games -->
+            <section id="sec-games" class="section-container">
+                <div class="flex justify-between items-center mb-8 border-b-4 border-emerald-600 pb-2">
+                    <h2 class="text-3xl font-bold text-gray-800">Games Edukasi</h2>
+                    <button type="button" data-toggle="form-game" class="guru-only btn flex items-center gap-2"><i class="fa-solid fa-plus"></i> Tambah Game Link</button>
+                </div>
+                <form id="form-game" class="guru-only hidden bg-white p-6 rounded-xl shadow-md border border-emerald-100 mb-8">
+                    <h3 class="font-bold text-lg text-gray-900 mb-4 border-b pb-2">Panel Guru: Tambah Link Game Eksternal</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                        <div><label class="lbl" for="game-nama">Nama Game</label><input class="field" type="text" id="game-nama" required maxlength="100" placeholder="Contoh: Kuis Kahoot Fisika"></div>
+                        <div><label class="lbl" for="game-link">Link Game (https://...)</label><input class="field" type="url" id="game-link" required placeholder="https://kahoot.it/..."></div>
+                    </div>
+                    <button type="submit" class="btn">Simpan Link Game</button>
+                </form>
+                <div id="list-games" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
+            </section>
+
+            <!-- Materi -->
+            <section id="sec-materi" class="section-container">
+                <div class="flex justify-between items-center mb-8 border-b-4 border-emerald-600 pb-2">
+                    <h2 class="text-3xl font-bold text-gray-800">Materi Pembelajaran</h2>
+                    <button type="button" data-toggle="form-materi" class="guru-only btn flex items-center gap-2"><i class="fa-solid fa-plus"></i> Tambah Materi</button>
+                </div>
+                <form id="form-materi" class="guru-only hidden bg-white p-6 rounded-xl shadow-md border border-emerald-100 mb-8">
+                    <h3 class="font-bold text-lg text-gray-900 mb-4 border-b pb-2">Panel Guru: Buat Materi Baru</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+                        <div><label class="lbl" for="materi-judul">Judul Materi</label><input class="field" type="text" id="materi-judul" required maxlength="150" placeholder="Judul Bab/Topik"></div>
+                        <div><label class="lbl" for="materi-kelas">Kelas</label>
+                            <select class="field" id="materi-kelas"><option value="kelas-10">Kelas 10</option><option value="kelas-11">Kelas 11</option><option value="kelas-12">Kelas 12</option></select></div>
+                        <div><label class="lbl" for="materi-tipe">Tipe Materi</label>
+                            <select class="field" id="materi-tipe"><option value="teks">Teks / Artikel Bacaan</option><option value="pdf">Dokumen PDF</option><option value="video">Video YouTube</option></select></div>
+                    </div>
+                    <div id="materi-input-teks" class="mb-4"><label class="lbl" for="materi-teks">Isi Materi</label><textarea class="field" id="materi-teks" rows="6" maxlength="20000" placeholder="Ketik materi di sini..."></textarea></div>
+                    <div id="materi-input-file" class="mb-4 hidden"><label class="lbl" for="materi-file">Upload PDF (maks. 10 MB)</label><input class="field" type="file" id="materi-file" accept=".pdf"></div>
+                    <div id="materi-input-link" class="mb-4 hidden"><label class="lbl" for="materi-link">Link YouTube</label><input class="field" type="url" id="materi-link" placeholder="https://www.youtube.com/watch?v=..."></div>
+                    <button type="submit" class="btn">Publikasi Materi</button>
+                </form>
+
+                <div class="flex flex-wrap gap-2 border-b-2 border-emerald-200 mb-6">
+                    <a href="#materi/kelas-10" data-kelas="kelas-10" class="tab-kelas">Kelas 10</a>
+                    <a href="#materi/kelas-11" data-kelas="kelas-11" class="tab-kelas">Kelas 11</a>
+                    <a href="#materi/kelas-12" data-kelas="kelas-12" class="tab-kelas">Kelas 12</a>
+                </div>
+                <div id="list-materi" class="grid grid-cols-1 lg:grid-cols-2 gap-8"></div>
+            </section>
+
+            <!-- Tugas -->
+            <section id="sec-tugas" class="section-container">
+                <div class="flex justify-between items-center mb-8 border-b-4 border-emerald-600 pb-2">
+                    <h2 class="text-3xl font-bold text-gray-800">Daftar Tugas</h2>
+                    <button type="button" data-toggle="form-tugas" class="guru-only btn flex items-center gap-2"><i class="fa-solid fa-plus"></i> Tambah Tugas</button>
+                </div>
+                <form id="form-tugas" class="guru-only hidden bg-white p-6 rounded-xl shadow-md border border-emerald-100 mb-8">
+                    <h3 class="font-bold text-lg text-gray-900 mb-4 border-b pb-2">Panel Guru: Tambah Tugas Baru</h3>
+                    <div class="mb-4"><label class="lbl" for="tugas-judul">Judul Tugas</label><input class="field" type="text" id="tugas-judul" required maxlength="150" placeholder="Contoh: Tugas 1 Matematika"></div>
+                    <div class="mb-4"><label class="lbl" for="tugas-deskripsi">Deskripsi Tugas</label><textarea class="field" id="tugas-deskripsi" rows="3" required maxlength="5000" placeholder="Jelaskan instruksi tugas..."></textarea></div>
+                    <div class="mb-4"><label class="lbl" for="tugas-deadline">Batas Waktu (Deadline)</label><input class="field" type="datetime-local" id="tugas-deadline" required></div>
+                    <button type="submit" class="btn">Simpan Tugas</button>
+                </form>
+                <div id="list-tugas" class="space-y-4"></div>
+            </section>
+
+            <!-- Kumpul tugas (siswa) -->
+            <section id="sec-kumpul" class="section-container">
+                <a href="#tugas" class="text-emerald-800 font-semibold text-sm hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i> Kembali ke Daftar Tugas</a>
+                <h2 class="text-3xl font-bold text-gray-800 mt-3 mb-8 border-b-4 border-emerald-600 pb-2">Pengumpulan Tugas</h2>
+                <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+                    <div id="kumpul-info" class="mb-6"></div>
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <div class="md:w-1/2">
+                            <h3 class="font-bold text-xl text-gray-900 mb-4">Ketentuan</h3>
+                            <ul class="text-sm text-gray-800 space-y-2 font-medium">
+                                <li><i class="fa-solid fa-check text-emerald-600 mr-2"></i> Ukuran maksimal 5 MB</li>
+                                <li><i class="fa-solid fa-check text-emerald-600 mr-2"></i> Format .pdf atau .png</li>
+                                <li><i class="fa-solid fa-check text-emerald-600 mr-2"></i> Mengumpulkan ulang akan mengganti file sebelumnya (sebelum deadline)</li>
+                            </ul>
+                        </div>
+                        <form id="form-kumpul" class="md:w-1/2">
+                            <label class="lbl" for="kumpul-file">Pilih File Tugas Anda</label>
+                            <input class="field mb-4" type="file" id="kumpul-file" required accept=".pdf,.png">
+                            <button type="submit" class="btn w-full py-3">Kirim Tugas Sekarang</button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Rekap pengumpulan (guru) -->
+            <section id="sec-pengumpulan" class="section-container">
+                <a href="#tugas" class="text-emerald-800 font-semibold text-sm hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i> Kembali ke Daftar Tugas</a>
+                <h2 class="text-3xl font-bold text-gray-800 mt-3 mb-2" id="pengumpulan-judul">Pengumpulan</h2>
+                <p class="text-sm text-gray-700 mb-6" id="pengumpulan-sub"></p>
+                <div id="list-pengumpulan" class="space-y-3"></div>
+                <div id="belum-kumpul" class="mt-6"></div>
+            </section>
+
+            <!-- Evaluasi -->
+            <section id="sec-evaluasi" class="section-container">
+                <div class="flex justify-between items-center mb-8 border-b-4 border-emerald-600 pb-2">
+                    <h2 class="text-3xl font-bold text-gray-800">Evaluasi</h2>
+                    <button type="button" data-toggle="form-evaluasi" class="guru-only btn flex items-center gap-2"><i class="fa-solid fa-plus"></i> Tambah Evaluasi</button>
+                </div>
+                <form id="form-evaluasi" class="guru-only hidden bg-white p-6 rounded-xl shadow-md border border-emerald-100 mb-8">
+                    <h3 class="font-bold text-lg text-gray-900 mb-4 border-b pb-2">Panel Guru: Tambah Evaluasi</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                        <div><label class="lbl" for="eval-judul">Judul</label><input class="field" type="text" id="eval-judul" required maxlength="150" placeholder="Contoh: Ujian Tengah Semester"></div>
+                        <div><label class="lbl" for="eval-link">Link Ujian (https://...)</label><input class="field" type="url" id="eval-link" required placeholder="https://forms.gle/..."></div>
+                    </div>
+                    <div class="mb-4"><label class="lbl" for="eval-desk">Keterangan (opsional)</label><textarea class="field" id="eval-desk" rows="2" maxlength="1000" placeholder="Mis. token dibagikan di grup kelas"></textarea></div>
+                    <button type="submit" class="btn">Simpan Evaluasi</button>
+                </form>
+                <div id="list-evaluasi" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+            </section>
+
+            <!-- Absensi -->
+            <section id="sec-absensi" class="section-container">
+                <h2 class="text-3xl font-bold text-gray-800 mb-8 border-b-4 border-emerald-600 pb-2">Absensi</h2>
+
+                <div class="siswa-only max-w-xl mx-auto">
+                    <div id="absen-siswa" class="bg-white p-6 rounded-xl shadow-md border border-emerald-100"></div>
+                    <h3 class="font-bold text-gray-900 mt-8 mb-3">Riwayat Absensi Anda</h3>
+                    <div id="absen-riwayat" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"></div>
+                </div>
+
+                <div class="guru-only">
+                    <div class="flex flex-wrap items-end gap-4 mb-6">
+                        <div><label class="lbl" for="absen-tanggal">Tanggal</label><input class="field" type="date" id="absen-tanggal"></div>
+                    </div>
+                    <div id="absen-guru"></div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Notifikasi -->
+    <div id="toast" role="status" aria-live="polite" class="hidden fixed bottom-5 right-5 bg-white border-l-4 shadow-2xl p-4 rounded-md z-[60] max-w-sm flex items-start gap-3">
+        <i id="toast-icon" class="fa-solid text-xl mt-0.5"></i>
+        <div>
+            <h4 id="toast-title" class="text-gray-900 font-bold text-sm"></h4>
+            <p id="toast-msg" class="text-gray-800 text-sm mt-1 font-medium"></p>
+        </div>
+    </div>
+
+    <script>
+    // Diagnostik: tampilkan penyebab bila halaman macet di "Memuat..."
+    (function () {
+        var failed = false;
+        function bootFail(msg) {
+            var b = document.getElementById('boot');
+            if (failed || !b || b.classList.contains('hidden')) return;
+            failed = true;
+            b.textContent = '';
+            var d = document.createElement('div'); d.className = 'max-w-xl p-6 text-center';
+            var t = document.createElement('p'); t.className = 'font-bold text-red-700 mb-2'; t.textContent = 'Aplikasi gagal dimuat';
+            var m = document.createElement('p'); m.className = 'text-sm text-gray-800 break-words'; m.textContent = msg;
+            d.appendChild(t); d.appendChild(m); b.appendChild(d);
+        }
+        window.addEventListener('error', function (e) { bootFail(e.message || 'Kesalahan skrip'); });
+        window.addEventListener('unhandledrejection', function (e) { bootFail((e.reason && e.reason.message) || String(e.reason)); });
+        setTimeout(function () {
+            bootFail('Tidak ada respons dalam 10 detik. Kemungkinan: file skrip dari internet terblokir, atau proyek Supabase sedang di-pause. Tekan F12 > Console untuk detail.');
+        }, 10000);
+    })();
+    </script>
+    <script>
+    // ======================= KONFIGURASI =======================
+    // Isi dengan data dari Supabase: Project Settings > API
+    const SUPABASE_URL      = 'https://hmgbxwryrcoagwmiczpv.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_137l8J0zDg6hMTBc4yXd-Q_8EHCDBra';
+    // (Gunakan anon public key. JANGAN gunakan service_role key.)
+    // ===========================================================
+
+    const BUCKET = 'files';
+    const TZ = 'Asia/Jakarta';
+    const KELAS = ['kelas-10', 'kelas-11', 'kelas-12'];
+    const $ = id => document.getElementById(id);
+
+    let sb, me = null, profile = null;
+    let currentTugas = null;
+
+    // ---------- Helper DOM (semua teks memakai textContent, bukan innerHTML) ----------
+    function el(tag, props = {}, ...kids) {
+        const e = document.createElement(tag);
+        for (const [k, v] of Object.entries(props)) {
+            if (v === false || v == null) continue;
+            if (k === 'class') e.className = v;
+            else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+            else e.setAttribute(k, v === true ? '' : v);
+        }
+        kids.flat(Infinity).forEach(c => {
+            if (c == null || c === false) return;
+            e.append(c.nodeType ? c : document.createTextNode(String(c)));
+        });
+        return e;
+    }
+    const icon = cls => el('i', { class: cls });
+    const empty = msg => el('div', { class: 'col-span-full text-center text-gray-600 bg-white border border-dashed border-gray-300 rounded-xl p-10' }, msg);
+    const isGuru = () => profile && profile.role === 'guru';
+    const errMsg = e => (e && e.message) ? e.message : String(e);
+    const q = async p => { const { data, error } = await p; if (error) throw error; return data; };
+
+    function safeUrl(u) {
+        try { const x = new URL(u); return (x.protocol === 'https:' || x.protocol === 'http:') ? x.href : null; }
+        catch { return null; }
+    }
+    function youtubeId(u) {
+        const m = String(u).match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+        return m ? m[1] : null;
+    }
+    const fmtDateTime = iso => new Date(iso).toLocaleString('id-ID', { timeZone: TZ, dateStyle: 'full', timeStyle: 'short' });
+    const fmtShort = iso => new Date(iso).toLocaleString('id-ID', { timeZone: TZ, dateStyle: 'medium', timeStyle: 'short' });
+    const jakartaToday = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+
+    let toastTimer;
+    function toast(msg, type = 'ok') {
+        const box = $('toast');
+        const err = type === 'error';
+        box.className = 'fixed bottom-5 right-5 bg-white border-l-4 shadow-2xl p-4 rounded-md z-[60] max-w-sm flex items-start gap-3 ' + (err ? 'border-red-600' : 'border-emerald-600');
+        $('toast-icon').className = 'fa-solid text-xl mt-0.5 ' + (err ? 'fa-circle-exclamation text-red-600' : 'fa-circle-check text-emerald-600');
+        $('toast-title').textContent = err ? 'Gagal' : 'Berhasil';
+        $('toast-msg').textContent = msg;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => box.classList.add('hidden'), 4500);
+    }
+
+    function guarded(handler) {
+        return async e => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const btn = form.querySelector('button[type=submit]');
+            if (btn) btn.disabled = true;
+            try { await handler(form); }
+            catch (err) { console.error(err); toast(errMsg(err), 'error'); }
+            finally { if (btn) btn.disabled = false; }
+        };
+    }
+
+    // ---------- File & storage ----------
+    function checkFile(file, { maxMB, exts }) {
+        if (!file) throw new Error('Pilih file terlebih dahulu.');
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (exts && !exts.includes(ext)) throw new Error('Format file harus: ' + exts.join(', ') + '.');
+        if (file.size > maxMB * 1024 * 1024) throw new Error('Ukuran file maksimal ' + maxMB + ' MB.');
+    }
+    async function upload(file, folder) {
+        const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const path = folder + '/' + Date.now() + '_' + safe;
+        const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || undefined });
+        if (error) throw error;
+        return path;
+    }
+    async function signed(path, downloadName) {
+        const opts = downloadName ? { download: downloadName } : undefined;
+        const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 3600, opts);
+        if (error) throw error;
+        return data.signedUrl;
+    }
+    const removeFiles = async paths => {
+        const list = paths.filter(Boolean);
+        if (list.length) await sb.storage.from(BUCKET).remove(list);
+    };
+
+    // ---------- Komponen UI ----------
+    const card = 'bg-white rounded-xl shadow-sm border border-emerald-100';
+    function linkBtn(href, label, dark, iconCls) {
+        if (!href) return null;
+        return el('a', { href, target: '_blank', rel: 'noopener noreferrer',
+            class: 'font-bold px-4 py-2 rounded-lg transition text-sm ' + (dark ? 'bg-emerald-800 text-white hover:bg-emerald-900' : 'bg-emerald-100 text-emerald-900 hover:bg-emerald-200') },
+            icon(iconCls + ' mr-1'), label);
+    }
+    function delBtn(onClick) {
+        return el('button', { type: 'button', title: 'Hapus', 'aria-label': 'Hapus',
+            class: 'guru-only text-red-600 hover:bg-red-50 rounded-md px-2 py-1 shrink-0', onclick: onClick }, icon('fa-solid fa-trash'));
+    }
+    async function hapus(table, row, paths, reload) {
+        if (!confirm('Hapus item ini? Tindakan ini tidak bisa dibatalkan.')) return;
+        try {
+            await q(sb.from(table).delete().eq('id', row.id));
+            await removeFiles(paths);
+            toast('Item berhasil dihapus.');
+            await reload();
+        } catch (e) { toast(errMsg(e), 'error'); }
+    }
+
+    // ---------- Navigasi ----------
+    const NAV = [
+        { label: 'Beranda', route: 'beranda' },
+        { label: 'Media Pembelajaran', children: [
+            { label: 'LKPD', route: 'lkpd' }, { label: 'Latihan Soal', route: 'latihan' }, { label: 'Games', route: 'games' } ] },
+        { label: 'Materi', children: [
+            { label: 'Kelas 10', route: 'materi/kelas-10' }, { label: 'Kelas 11', route: 'materi/kelas-11' }, { label: 'Kelas 12', route: 'materi/kelas-12' } ] },
+        { label: 'Tugas', route: 'tugas' },
+        { label: 'Evaluasi', route: 'evaluasi' },
+        { label: 'Absensi', route: 'absensi', hl: true }
+    ];
+
+    function closeMenus() {
+        document.querySelectorAll('#nav-desktop .dropdown-menu').forEach(m => m.classList.add('hidden'));
+        document.querySelectorAll('#nav-desktop [aria-expanded]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+        $('mobile-menu').classList.add('hidden');
+        $('mobile-menu-btn').setAttribute('aria-expanded', 'false');
+    }
+    function buildNav() {
+        const d = $('nav-desktop'), m = $('nav-mobile');
+        d.replaceChildren(); m.replaceChildren();
+        NAV.forEach(item => {
+            if (!item.children) {
+                d.append(el('a', { href: '#' + item.route, class: 'px-3 py-2 rounded-md text-sm font-medium hover:bg-emerald-800 transition' + (item.hl ? ' bg-emerald-700' : '') }, item.label));
+                m.append(el('a', { href: '#' + item.route, class: 'block px-3 py-2 rounded-md text-base font-medium hover:bg-emerald-700' }, item.label));
+                return;
+            }
+            const menu = el('div', { class: 'dropdown-menu hidden absolute left-0 mt-1 w-48 bg-white rounded-md shadow-xl py-1 z-50 border border-gray-100', role: 'menu' },
+                item.children.map(c => el('a', { href: '#' + c.route, role: 'menuitem', class: 'block px-4 py-2 text-sm text-gray-900 hover:bg-emerald-50 hover:text-emerald-800 font-medium' }, c.label)));
+            const btn = el('button', { type: 'button', 'aria-haspopup': 'true', 'aria-expanded': 'false',
+                class: 'flex items-center px-3 py-2 rounded-md text-sm font-medium hover:bg-emerald-800 transition',
+                onclick: ev => {
+                    ev.stopPropagation();
+                    const willOpen = menu.classList.contains('hidden');
+                    closeMenus();
+                    if (willOpen) { menu.classList.remove('hidden'); btn.setAttribute('aria-expanded', 'true'); }
+                } }, item.label, icon('fa-solid fa-chevron-down ml-1 text-xs'));
+            d.append(el('div', { class: 'relative' }, btn, menu));
+            m.append(el('details', {},
+                el('summary', { class: 'px-3 py-2 text-base font-medium cursor-pointer hover:bg-emerald-700 rounded-md' }, item.label),
+                el('div', { class: 'pl-6' }, item.children.map(c => el('a', { href: '#' + c.route, class: 'block px-3 py-2 text-sm text-gray-200 hover:text-white' }, c.label)))));
+        });
+    }
+
+    // ---------- Router berbasis hash ----------
+    const ROUTES = {
+        beranda:     { sec: 'beranda' },
+        lkpd:        { sec: 'lkpd', load: loadLKPD },
+        latihan:     { sec: 'latihan', load: loadLatihan },
+        games:       { sec: 'games', load: loadGames },
+        materi:      { sec: 'materi', load: loadMateri },
+        tugas:       { sec: 'tugas', load: loadTugas },
+        kumpul:      { sec: 'kumpul', load: loadKumpul },
+        pengumpulan: { sec: 'pengumpulan', load: loadPengumpulan },
+        evaluasi:    { sec: 'evaluasi', load: loadEvaluasi },
+        absensi:     { sec: 'absensi', load: loadAbsensi }
+    };
+    async function route() {
+        if (!me) return;
+        const [name, arg] = (location.hash.slice(1) || 'beranda').split('/');
+        const r = ROUTES[name] || ROUTES.beranda;
+        document.querySelectorAll('.section-container').forEach(s => s.classList.toggle('active', s.id === 'sec-' + r.sec));
+        closeMenus();
+        window.scrollTo(0, 0);
+        if (r.load) {
+            try { await r.load(arg); }
+            catch (e) { console.error(e); toast(errMsg(e), 'error'); }
+        }
+    }
+
+    // ---------- LKPD & Latihan ----------
+    async function fileCard(r, table, reload) {
+        const isPdf = /\.pdf$/i.test(r.file_name);
+        let view = null, dl = null;
+        try { view = await signed(r.file_path); dl = await signed(r.file_path, r.file_name); } catch (e) { console.error(e); }
+        return el('div', { class: card + ' p-6' },
+            el('div', { class: 'flex justify-between items-start gap-3 mb-3' },
+                el('div', {},
+                    el('h4', { class: 'font-bold text-gray-900 text-lg' }, icon(isPdf ? 'fa-solid fa-file-pdf text-red-500 mr-2' : 'fa-solid fa-file-word text-blue-600 mr-2'), r.judul),
+                    el('p', { class: 'text-sm text-gray-700 mt-1' }, 'File: ' + r.file_name)),
+                delBtn(() => hapus(table, r, [r.file_path], reload))),
+            (isPdf && view) ? el('iframe', { src: view, title: r.judul, class: 'w-full border border-gray-200 rounded-md bg-gray-100', style: 'height:500px' }) : null,
+            view ? el('div', { class: 'flex gap-2 mt-4 flex-wrap' },
+                linkBtn(view, 'Buka di Tab Baru', false, 'fa-solid fa-arrow-up-right-from-square'),
+                linkBtn(dl, 'Unduh', true, 'fa-solid fa-download'))
+                 : el('p', { class: 'text-red-600 text-sm mt-2' }, 'File tidak dapat dimuat.'));
+    }
+    async function loadFileList(table, boxId, emptyMsg) {
+        const rows = await q(sb.from(table).select('*').order('created_at', { ascending: false }));
+        const box = $(boxId); box.replaceChildren();
+        if (!rows.length) return box.append(empty(emptyMsg));
+        const cards = await Promise.all(rows.map(r => fileCard(r, table, () => loadFileList(table, boxId, emptyMsg))));
+        cards.forEach(c => box.append(c));
+    }
+    function loadLKPD() { return loadFileList('lkpd', 'list-lkpd', 'Belum ada LKPD.'); }
+    function loadLatihan() { return loadFileList('latihan', 'list-latihan', 'Belum ada latihan soal.'); }
+
+    async function simpanFileItem(table, form, judulId, fileId, exts, reload) {
+        const judul = $(judulId).value.trim();
+        const file = $(fileId).files[0];
+        checkFile(file, { maxMB: 10, exts });
+        const path = await upload(file, table);
+        try { await q(sb.from(table).insert({ judul, file_path: path, file_name: file.name })); }
+        catch (e) { await removeFiles([path]); throw e; }
+        form.reset(); form.classList.add('hidden');
+        toast('Berhasil dipublikasikan.');
+        await reload();
+    }
+
+    // ---------- Games ----------
+    async function loadGames() {
+        const rows = await q(sb.from('games').select('*').order('created_at', { ascending: false }));
+        const box = $('list-games'); box.replaceChildren();
+        if (!rows.length) return box.append(empty('Belum ada game.'));
+        rows.forEach(r => {
+            const href = safeUrl(r.link);
+            box.append(el('div', { class: 'bg-emerald-800 p-6 rounded-xl shadow-sm flex flex-col items-center text-center relative' },
+                el('div', { class: 'absolute top-2 right-2' }, delBtn(() => hapus('games', r, [], loadGames))),
+                icon('fa-solid fa-gamepad text-4xl text-emerald-200 mb-3'),
+                el('h4', { class: 'font-bold text-white text-lg mb-4' }, r.nama),
+                href ? el('a', { href, target: '_blank', rel: 'noopener noreferrer', class: 'w-full bg-white text-emerald-900 font-bold py-2 rounded-lg hover:bg-gray-100 transition shadow-sm' }, 'Buka Game')
+                     : el('span', { class: 'text-red-200 text-sm' }, 'Link tidak valid')));
+        });
+    }
+
+    // ---------- Materi ----------
+    function toggleMateriInput() {
+        const t = $('materi-tipe').value;
+        $('materi-input-teks').classList.toggle('hidden', t !== 'teks');
+        $('materi-input-file').classList.toggle('hidden', t !== 'pdf');
+        $('materi-input-link').classList.toggle('hidden', t !== 'video');
+        $('materi-teks').required = t === 'teks';
+        $('materi-file').required = t === 'pdf';
+        $('materi-link').required = t === 'video';
+    }
+    async function materiBody(r) {
+        if (r.tipe === 'teks') return el('div', { class: 'p-6 text-gray-900 font-medium text-sm overflow-y-auto bg-gray-50 border-b border-gray-100 whitespace-pre-wrap', style: 'height:16rem' }, r.isi || '');
+        if (r.tipe === 'pdf') {
+            let view = null; try { view = await signed(r.file_path); } catch (e) { console.error(e); }
+            if (!view) return el('div', { class: 'p-6 text-red-600 text-sm' }, 'File tidak dapat dimuat.');
+            return el('div', {},
+                el('iframe', { src: view, title: r.judul, class: 'w-full bg-gray-100 border-b border-gray-100', style: 'height:500px' }),
+                el('div', { class: 'p-4 bg-gray-50 border-b border-gray-100' }, linkBtn(view, 'Buka PDF di Tab Baru', false, 'fa-solid fa-arrow-up-right-from-square')));
+        }
+        const id = youtubeId(r.video_url || '');
+        return id ? el('iframe', { src: 'https://www.youtube.com/embed/' + id, title: r.judul, class: 'w-full bg-black border-b border-gray-100', style: 'height:18rem',
+                        allow: 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture', allowfullscreen: true })
+                  : el('div', { class: 'p-6 bg-red-100 text-red-800 font-medium' }, 'Link video tidak valid.');
+    }
+    async function loadMateri(kelas) {
+        if (!KELAS.includes(kelas)) kelas = 'kelas-10';
+        document.querySelectorAll('.tab-kelas').forEach(a => {
+            const on = a.dataset.kelas === kelas;
+            a.className = 'tab-kelas px-6 py-2 font-bold rounded-t-lg transition ' + (on ? 'bg-emerald-800 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300');
+            a.setAttribute('aria-current', on ? 'page' : 'false');
+        });
+        $('materi-kelas').value = kelas;
+        const rows = await q(sb.from('materi').select('*').eq('kelas', kelas).order('created_at', { ascending: false }));
+        const box = $('list-materi'); box.replaceChildren();
+        if (!rows.length) return box.append(empty('Belum ada materi untuk ' + kelas.replace('-', ' ') + '.'));
+        const labels = { teks: 'Teks Bacaan', pdf: 'Dokumen PDF', video: 'Video' };
+        const items = await Promise.all(rows.map(async r => el('div', { class: 'bg-white rounded-xl shadow-md overflow-hidden border border-emerald-100 flex flex-col' },
+            await materiBody(r),
+            el('div', { class: 'p-6 flex justify-between items-start gap-3' },
+                el('div', {},
+                    el('span', { class: 'text-xs font-bold bg-emerald-100 text-emerald-900 px-2 py-1 rounded uppercase tracking-wider' }, labels[r.tipe] || r.tipe),
+                    el('h3', { class: 'font-bold text-xl text-gray-900 mt-2' }, r.judul)),
+                delBtn(() => hapus('materi', r, [r.file_path], () => loadMateri(kelas)))))));
+        items.forEach(i => box.append(i));
+    }
+    async function simpanMateri(form) {
+        const judul = $('materi-judul').value.trim();
+        const kelas = $('materi-kelas').value;
+        const tipe = $('materi-tipe').value;
+        const row = { judul, kelas, tipe };
+        let path = null;
+        if (tipe === 'teks') {
+            row.isi = $('materi-teks').value.trim();
+            if (!row.isi) throw new Error('Isi materi tidak boleh kosong.');
+        } else if (tipe === 'pdf') {
+            const file = $('materi-file').files[0];
+            checkFile(file, { maxMB: 10, exts: ['pdf'] });
+            path = await upload(file, 'materi');
+            row.file_path = path; row.file_name = file.name;
+        } else {
+            const link = safeUrl($('materi-link').value.trim());
+            if (!link || !youtubeId(link)) throw new Error('Masukkan link YouTube yang valid.');
+            row.video_url = link;
+        }
+        try { await q(sb.from('materi').insert(row)); }
+        catch (e) { await removeFiles([path]); throw e; }
+        form.reset(); toggleMateriInput(); form.classList.add('hidden');
+        toast('Materi berhasil ditambahkan ke ' + kelas.replace('-', ' ') + '.');
+        if (location.hash === '#materi/' + kelas) await loadMateri(kelas);
+        else location.hash = '#materi/' + kelas;
+    }
+
+    // ---------- Tugas ----------
+    async function loadTugas() {
+        const rows = await q(sb.from('tugas').select('*').order('deadline', { ascending: false }));
+        const box = $('list-tugas'); box.replaceChildren();
+        if (!rows.length) return box.append(empty('Belum ada tugas.'));
+        const counts = {}, mine = {};
+        if (isGuru()) {
+            (await q(sb.from('pengumpulan').select('tugas_id'))).forEach(p => counts[p.tugas_id] = (counts[p.tugas_id] || 0) + 1);
+        } else {
+            (await q(sb.from('pengumpulan').select('*').eq('siswa_id', me.id))).forEach(p => mine[p.tugas_id] = p);
+        }
+        const now = Date.now();
+        rows.forEach(t => {
+            const closed = new Date(t.deadline).getTime() <= now;
+            const sub = mine[t.id];
+            let action;
+            if (isGuru()) {
+                action = el('a', { href: '#pengumpulan/' + t.id, class: 'btn text-sm inline-block' }, icon('fa-solid fa-list-check mr-1'), 'Lihat Pengumpulan (' + (counts[t.id] || 0) + ')');
+            } else {
+                const status = sub
+                    ? el('p', { class: 'text-sm text-emerald-800 font-semibold mb-3' }, icon('fa-solid fa-circle-check mr-1'), 'Sudah dikumpulkan (' + fmtShort(sub.dikumpulkan_at) + ')' + (sub.nilai != null ? ' • Nilai: ' + sub.nilai : ' • Belum dinilai'))
+                    : null;
+                action = el('div', {}, status,
+                    closed ? el('span', { class: 'inline-block bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-sm' }, 'Pengumpulan ditutup')
+                           : el('a', { href: '#kumpul/' + t.id, class: 'btn text-sm inline-block' }, sub ? 'Kumpulkan Ulang' : 'Kumpulkan Tugas Ini'));
+            }
+            box.append(el('div', { class: card + ' p-6' },
+                el('div', { class: 'flex justify-between items-start gap-3' },
+                    el('h4', { class: 'font-bold text-gray-900 text-xl' }, t.judul),
+                    delBtn(() => hapusTugas(t))),
+                el('div', { class: 'flex items-center gap-2 font-bold text-sm mt-2 mb-4 ' + (closed ? 'text-gray-500' : 'text-red-600') },
+                    icon('fa-solid fa-clock'), 'Batas Waktu: ' + fmtDateTime(t.deadline) + (closed ? ' (lewat)' : '')),
+                el('p', { class: 'text-gray-800 text-sm font-medium mb-4 whitespace-pre-wrap' }, t.deskripsi),
+                action));
+        });
+    }
+    async function hapusTugas(t) {
+        if (!confirm('Hapus tugas ini beserta semua file pengumpulan siswa?')) return;
+        try {
+            const subs = await q(sb.from('pengumpulan').select('file_path').eq('tugas_id', t.id));
+            await q(sb.from('tugas').delete().eq('id', t.id));
+            await removeFiles(subs.map(s => s.file_path));
+            toast('Tugas dihapus.');
+            await loadTugas();
+        } catch (e) { toast(errMsg(e), 'error'); }
+    }
+
+    // ---------- Kumpul tugas (siswa) ----------
+    async function loadKumpul(id) {
+        const info = $('kumpul-info'); info.replaceChildren();
+        const form = $('form-kumpul');
+        currentTugas = null;
+        if (isGuru()) { location.hash = '#tugas'; return; }
+        const { data: t, error } = await sb.from('tugas').select('*').eq('id', id || '').maybeSingle();
+        if (error || !t) { info.append(el('p', { class: 'text-red-600 font-medium' }, 'Tugas tidak ditemukan.')); form.classList.add('hidden'); return; }
+        currentTugas = t;
+        const closed = new Date(t.deadline).getTime() <= Date.now();
+        form.classList.toggle('hidden', closed);
+        info.append(
+            el('h3', { class: 'font-bold text-xl text-gray-900' }, t.judul),
+            el('p', { class: 'text-sm font-bold mt-1 ' + (closed ? 'text-gray-500' : 'text-red-600') }, 'Batas waktu: ' + fmtDateTime(t.deadline)),
+            el('p', { class: 'text-gray-800 text-sm mt-3 whitespace-pre-wrap' }, t.deskripsi),
+            closed ? el('p', { class: 'mt-3 text-sm font-bold text-red-700' }, 'Batas waktu sudah lewat. Pengumpulan ditutup.') : null);
+        const prev = await q(sb.from('pengumpulan').select('*').eq('tugas_id', t.id).eq('siswa_id', me.id));
+        if (prev.length) info.append(el('p', { class: 'mt-3 text-sm text-emerald-800 font-semibold' }, icon('fa-solid fa-circle-check mr-1'), 'Anda sudah mengumpulkan: ' + prev[0].file_name + ' (' + fmtShort(prev[0].dikumpulkan_at) + ')'));
+    }
+    async function kirimTugas(form) {
+        if (!currentTugas) throw new Error('Tugas tidak valid.');
+        if (new Date(currentTugas.deadline).getTime() <= Date.now()) throw new Error('Batas waktu sudah lewat.');
+        const file = $('kumpul-file').files[0];
+        checkFile(file, { maxMB: 5, exts: ['pdf', 'png'] });
+        const old = await q(sb.from('pengumpulan').select('file_path').eq('tugas_id', currentTugas.id).eq('siswa_id', me.id));
+        const path = await upload(file, 'tugas/' + me.id + '/' + currentTugas.id);
+        try {
+            await q(sb.from('pengumpulan').upsert({
+                tugas_id: currentTugas.id, siswa_id: me.id, file_path: path, file_name: file.name, dikumpulkan_at: new Date().toISOString()
+            }, { onConflict: 'tugas_id,siswa_id' }));
+        } catch (e) { await removeFiles([path]); throw e; }
+        await removeFiles(old.map(o => o.file_path));
+        form.reset();
+        toast('Tugas berhasil dikumpulkan.');
+        location.hash = '#tugas';
+    }
+
+    // ---------- Rekap pengumpulan (guru) ----------
+    async function loadPengumpulan(id) {
+        const list = $('list-pengumpulan'); list.replaceChildren();
+        $('belum-kumpul').replaceChildren();
+        if (!isGuru()) { location.hash = '#tugas'; return; }
+        const t = await q(sb.from('tugas').select('*').eq('id', id || '').maybeSingle());
+        if (!t) { $('pengumpulan-judul').textContent = 'Tugas tidak ditemukan'; $('pengumpulan-sub').textContent = ''; return; }
+        $('pengumpulan-judul').textContent = t.judul;
+        $('pengumpulan-sub').textContent = 'Batas waktu: ' + fmtDateTime(t.deadline);
+        const [subs, siswa] = await Promise.all([
+            q(sb.from('pengumpulan').select('*, profiles(full_name)').eq('tugas_id', t.id).order('dikumpulkan_at')),
+            q(sb.from('profiles').select('id, full_name').eq('role', 'siswa').order('full_name'))
+        ]);
+        if (!subs.length) list.append(empty('Belum ada siswa yang mengumpulkan.'));
+        for (const s of subs) {
+            let url = null; try { url = await signed(s.file_path); } catch (e) { console.error(e); }
+            const nilai = el('input', { type: 'number', min: '0', max: '100', step: '0.01', class: 'field !w-24 !p-2', value: s.nilai ?? '', 'aria-label': 'Nilai' });
+            const late = new Date(s.dikumpulkan_at) > new Date(t.deadline);
+            list.append(el('div', { class: card + ' p-4 flex flex-wrap items-center gap-4 justify-between' },
+                el('div', {},
+                    el('p', { class: 'font-bold text-gray-900' }, (s.profiles && s.profiles.full_name) || '(tanpa nama)'),
+                    el('p', { class: 'text-xs text-gray-600' }, fmtShort(s.dikumpulkan_at) + (late ? ' • terlambat' : '') + ' • ' + s.file_name)),
+                el('div', { class: 'flex items-center gap-2 flex-wrap' },
+                    linkBtn(url, 'Buka File', false, 'fa-solid fa-file'),
+                    nilai,
+                    el('button', { type: 'button', class: 'btn text-sm !py-2', onclick: async ev => {
+                        const btn = ev.currentTarget; btn.disabled = true;
+                        try {
+                            const v = nilai.value === '' ? null : Number(nilai.value);
+                            if (v !== null && (isNaN(v) || v < 0 || v > 100)) throw new Error('Nilai harus 0 sampai 100.');
+                            await q(sb.from('pengumpulan').update({ nilai: v }).eq('id', s.id));
+                            toast('Nilai tersimpan.');
+                        } catch (e) { toast(errMsg(e), 'error'); } finally { btn.disabled = false; }
+                    } }, 'Simpan'))));
+        }
+        const done = new Set(subs.map(s => s.siswa_id));
+        const belum = siswa.filter(s => !done.has(s.id));
+        if (belum.length) $('belum-kumpul').append(el('div', { class: 'bg-amber-50 border border-amber-200 rounded-xl p-4' },
+            el('p', { class: 'font-bold text-amber-900 mb-2' }, 'Belum mengumpulkan (' + belum.length + ')'),
+            el('p', { class: 'text-sm text-amber-900' }, belum.map(s => s.full_name || '(tanpa nama)').join(', '))));
+    }
+
+    // ---------- Evaluasi ----------
+    async function loadEvaluasi() {
+        const rows = await q(sb.from('evaluasi').select('*').order('created_at', { ascending: false }));
+        const box = $('list-evaluasi'); box.replaceChildren();
+        if (!rows.length) return box.append(empty('Belum ada evaluasi.'));
+        rows.forEach(r => {
+            const href = safeUrl(r.link);
+            box.append(el('div', { class: 'bg-white p-8 rounded-xl shadow-md text-center border border-emerald-100 relative' },
+                el('div', { class: 'absolute top-3 right-3' }, delBtn(() => hapus('evaluasi', r, [], loadEvaluasi))),
+                icon('fa-solid fa-file-contract text-5xl text-emerald-800 mb-4'),
+                el('h3', { class: 'font-bold text-gray-900 text-xl mb-2' }, r.judul),
+                el('p', { class: 'text-gray-700 mb-4 whitespace-pre-wrap' }, r.deskripsi || 'Silakan ikuti tautan evaluasi berikut.'),
+                href ? el('a', { href, target: '_blank', rel: 'noopener noreferrer', class: 'btn inline-block' }, 'Mulai Ujian')
+                     : el('span', { class: 'text-red-600 text-sm' }, 'Link tidak valid')));
+        });
+    }
+
+    // ---------- Absensi ----------
+    async function loadAbsensi() {
+        if (isGuru()) return loadAbsensiGuru();
+        const today = jakartaToday();
+        const rows = await q(sb.from('absensi').select('*').eq('siswa_id', me.id).order('tanggal', { ascending: false }).limit(15));
+        const todayRow = rows.find(r => r.tanggal === today);
+        const box = $('absen-siswa'); box.replaceChildren();
+        box.append(el('p', { class: 'text-sm text-gray-700 mb-4' }, 'Tanggal hari ini: ' + new Date().toLocaleDateString('id-ID', { timeZone: TZ, dateStyle: 'full' })));
+        if (todayRow) {
+            box.append(el('div', { class: 'text-center py-4' }, icon('fa-solid fa-circle-check text-4xl text-emerald-600 mb-2'),
+                el('p', { class: 'font-bold text-gray-900' }, 'Anda sudah absen hari ini: ' + todayRow.status)));
+        } else {
+            const sel = el('select', { id: 'absen-status', class: 'field' }, ['Hadir', 'Izin', 'Sakit'].map(s => el('option', { value: s }, s)));
+            const form = el('form', { onsubmit: guarded(async () => {
+                await q(sb.from('absensi').insert({ status: sel.value }));
+                toast('Absensi berhasil disimpan.');
+                await loadAbsensi();
+            }) },
+                el('div', { class: 'mb-4' }, el('label', { class: 'lbl' }, 'Nama'), el('input', { class: 'field bg-gray-100', value: profile.full_name, readonly: true })),
+                el('div', { class: 'mb-6' }, el('label', { class: 'lbl', for: 'absen-status' }, 'Status Kehadiran'), sel),
+                el('button', { type: 'submit', class: 'btn w-full py-3' }, 'Kirim Absen'));
+            box.append(form);
+        }
+        const rw = $('absen-riwayat'); rw.replaceChildren();
+        if (!rows.length) { rw.append(el('p', { class: 'p-4 text-sm text-gray-600' }, 'Belum ada riwayat.')); return; }
+        rw.append(el('table', { class: 'w-full text-sm' },
+            el('thead', { class: 'bg-gray-50 text-left' }, el('tr', {}, el('th', { class: 'p-3' }, 'Tanggal'), el('th', { class: 'p-3' }, 'Status'))),
+            el('tbody', {}, rows.map(r => el('tr', { class: 'border-t border-gray-100' },
+                el('td', { class: 'p-3' }, new Date(r.tanggal + 'T00:00:00').toLocaleDateString('id-ID', { dateStyle: 'full' })),
+                el('td', { class: 'p-3 font-semibold' }, r.status))))));
+    }
+    async function loadAbsensiGuru() {
+        const inp = $('absen-tanggal');
+        if (!inp.value) inp.value = jakartaToday();
+        const tgl = inp.value;
+        const [rows, siswa] = await Promise.all([
+            q(sb.from('absensi').select('*, profiles(full_name)').eq('tanggal', tgl).order('created_at')),
+            q(sb.from('profiles').select('id, full_name').eq('role', 'siswa').order('full_name'))
+        ]);
+        const box = $('absen-guru'); box.replaceChildren();
+        const count = s => rows.filter(r => r.status === s).length;
+        box.append(el('div', { class: 'flex flex-wrap gap-3 mb-4 text-sm font-semibold' },
+            el('span', { class: 'bg-emerald-100 text-emerald-900 px-3 py-1 rounded-full' }, 'Hadir: ' + count('Hadir')),
+            el('span', { class: 'bg-blue-100 text-blue-900 px-3 py-1 rounded-full' }, 'Izin: ' + count('Izin')),
+            el('span', { class: 'bg-amber-100 text-amber-900 px-3 py-1 rounded-full' }, 'Sakit: ' + count('Sakit')),
+            el('span', { class: 'bg-gray-200 text-gray-800 px-3 py-1 rounded-full' }, 'Belum absen: ' + siswa.filter(s => !rows.some(r => r.siswa_id === s.id)).length)));
+        if (rows.length) {
+            box.append(el('div', { class: 'bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto' }, el('table', { class: 'w-full text-sm' },
+                el('thead', { class: 'bg-gray-50 text-left' }, el('tr', {}, ['Nama', 'Status', 'Waktu', ''].map(h => el('th', { class: 'p-3' }, h)))),
+                el('tbody', {}, rows.map(r => el('tr', { class: 'border-t border-gray-100' },
+                    el('td', { class: 'p-3 font-medium' }, (r.profiles && r.profiles.full_name) || '(tanpa nama)'),
+                    el('td', { class: 'p-3' }, r.status),
+                    el('td', { class: 'p-3 text-gray-600' }, new Date(r.created_at).toLocaleTimeString('id-ID', { timeZone: TZ, timeStyle: 'short' })),
+                    el('td', { class: 'p-3 text-right' }, delBtn(() => hapus('absensi', r, [], loadAbsensiGuru)))))))));
+        } else box.append(empty('Belum ada absensi pada tanggal ini.'));
+        const belum = siswa.filter(s => !rows.some(r => r.siswa_id === s.id));
+        if (belum.length) box.append(el('div', { class: 'bg-amber-50 border border-amber-200 rounded-xl p-4 mt-4' },
+            el('p', { class: 'font-bold text-amber-900 mb-2' }, 'Belum absen (' + belum.length + ')'),
+            el('p', { class: 'text-sm text-amber-900' }, belum.map(s => s.full_name || '(tanpa nama)').join(', '))));
+    }
+
+    // ---------- Autentikasi ----------
+    function authMsg(text, ok) {
+        const m = $('auth-msg');
+        m.textContent = text;
+        m.className = 'mt-4 text-sm font-medium rounded-md p-3 ' + (ok ? 'bg-emerald-50 text-emerald-900' : 'bg-red-50 text-red-800');
+    }
+    function showAuthTab(which) {
+        const login = which === 'login';
+        $('form-login').classList.toggle('hidden', !login);
+        $('form-register').classList.toggle('hidden', login);
+        $('tab-login').className = 'flex-1 py-2 font-bold border-b-4 ' + (login ? 'border-emerald-600 text-emerald-800' : 'border-transparent text-gray-500');
+        $('tab-register').className = 'flex-1 py-2 font-bold border-b-4 ' + (!login ? 'border-emerald-600 text-emerald-800' : 'border-transparent text-gray-500');
+        $('auth-msg').className = 'hidden';
+    }
+    function showOnly(id) {
+        ['boot', 'setup-screen', 'auth-screen', 'app'].forEach(x => $(x).classList.toggle('hidden', x !== id));
+    }
+    function showAuth() { me = null; profile = null; document.body.removeAttribute('data-role'); showOnly('auth-screen'); }
+
+    async function enterApp(user) {
+        me = user;
+        const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+        if (error || !data) {
+            await sb.auth.signOut();
+            showAuth();
+            authMsg('Profil akun tidak ditemukan. Pastikan skema SQL sudah dijalankan.', false);
+            return;
+        }
+        profile = data;
+        document.body.dataset.role = profile.role;
+        const nama = profile.full_name || user.email;
+        $('nav-nama').textContent = nama; $('nav-role').textContent = profile.role;
+        document.querySelectorAll('.nama-user').forEach(x => x.textContent = nama);
+        document.querySelectorAll('.role-user').forEach(x => x.textContent = profile.role);
+        $('hero-nama').textContent = nama;
+        buildNav();
+        showOnly('app');
+        await route();
+    }
+
+    // ---------- Inisialisasi ----------
+    async function init() {
+        if (/YOUR-/.test(SUPABASE_URL) || /YOUR-/.test(SUPABASE_ANON_KEY)) return showOnly('setup-screen');
+        sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { lock: async (name, acquireTimeout, fn) => await fn() } });
+
+        // Event UI
+        $('tab-login').addEventListener('click', () => showAuthTab('login'));
+        $('tab-register').addEventListener('click', () => showAuthTab('register'));
+        $('mobile-menu-btn').addEventListener('click', () => {
+            const open = $('mobile-menu').classList.toggle('hidden') === false;
+            $('mobile-menu-btn').setAttribute('aria-expanded', String(open));
+        });
+        document.addEventListener('click', e => { if (!e.target.closest('#nav-desktop')) closeMenus(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenus(); });
+        window.addEventListener('hashchange', route);
+        document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => $(b.dataset.toggle).classList.toggle('hidden')));
+        document.querySelectorAll('.logout-btn').forEach(b => b.addEventListener('click', async () => { await sb.auth.signOut(); location.hash = ''; showAuth(); }));
+        $('materi-tipe').addEventListener('change', toggleMateriInput);
+        $('absen-tanggal').addEventListener('change', () => loadAbsensiGuru().catch(e => toast(errMsg(e), 'error')));
+        toggleMateriInput();
+
+        // Form login & daftar
+        $('form-login').addEventListener('submit', guarded(async () => {
+            const { data, error } = await sb.auth.signInWithPassword({ email: $('login-email').value.trim(), password: $('login-pass').value });
+            if (error) { authMsg(error.message === 'Invalid login credentials' ? 'Email atau kata sandi salah.' : error.message, false); return; }
+            $('login-pass').value = '';
+            await enterApp(data.user);
+        }));
+        $('form-register').addEventListener('submit', guarded(async () => {
+            const { data, error } = await sb.auth.signUp({
+                email: $('reg-email').value.trim(), password: $('reg-pass').value,
+                options: { data: { full_name: $('reg-nama').value.trim() } }
+            });
+            if (error) { authMsg(error.message, false); return; }
+            if (data.session) { await enterApp(data.user); return; }
+            showAuthTab('login');
+            authMsg('Akun dibuat. Cek email Anda untuk konfirmasi, lalu masuk.', true);
+        }));
+
+        // Form guru
+        $('form-lkpd').addEventListener('submit', guarded(f => simpanFileItem('lkpd', f, 'lkpd-judul', 'lkpd-file', ['pdf', 'doc', 'docx'], loadLKPD)));
+        $('form-latihan').addEventListener('submit', guarded(f => simpanFileItem('latihan', f, 'latihan-judul', 'latihan-file', ['pdf'], loadLatihan)));
+        $('form-game').addEventListener('submit', guarded(async f => {
+            const link = safeUrl($('game-link').value.trim());
+            if (!link) throw new Error('Link harus diawali http:// atau https://');
+            await q(sb.from('games').insert({ nama: $('game-nama').value.trim(), link }));
+            f.reset(); f.classList.add('hidden'); toast('Link game ditambahkan.'); await loadGames();
+        }));
+        $('form-materi').addEventListener('submit', guarded(simpanMateri));
+        $('form-tugas').addEventListener('submit', guarded(async f => {
+            const dl = new Date($('tugas-deadline').value);
+            if (isNaN(dl)) throw new Error('Deadline tidak valid.');
+            await q(sb.from('tugas').insert({ judul: $('tugas-judul').value.trim(), deskripsi: $('tugas-deskripsi').value.trim(), deadline: dl.toISOString() }));
+            f.reset(); f.classList.add('hidden'); toast('Tugas ditambahkan.'); await loadTugas();
+        }));
+        $('form-evaluasi').addEventListener('submit', guarded(async f => {
+            const link = safeUrl($('eval-link').value.trim());
+            if (!link) throw new Error('Link harus diawali http:// atau https://');
+            await q(sb.from('evaluasi').insert({ judul: $('eval-judul').value.trim(), deskripsi: $('eval-desk').value.trim() || null, link }));
+            f.reset(); f.classList.add('hidden'); toast('Evaluasi ditambahkan.'); await loadEvaluasi();
+        }));
+        $('form-kumpul').addEventListener('submit', guarded(kirimTugas));
+
+        // Sesi tersimpan?
+        sb.auth.onAuthStateChange(evt => { if (evt === 'SIGNED_OUT') { me = null; profile = null; } });
+        const { data: { session } } = await Promise.race([sb.auth.getSession(), new Promise((_, rej) => setTimeout(() => rej(new Error('Pengecekan sesi login terlalu lama (timeout).')), 8000))]);
+        if (session) await enterApp(session.user); else showAuth();
+    }
+    init().catch(e => { console.error(e); showOnly('auth-screen'); authMsg('Terjadi kesalahan: ' + errMsg(e), false); });
+    </script>
+</body>
+</html>
